@@ -1,4 +1,4 @@
-# 🔐 Encrypted Media Locker
+# Aurx
 
 **A decentralized vault for your digital files — built with Rust, React, and Solana.**
 
@@ -6,7 +6,7 @@
 
 ## 🧠 Overview
 
-**Encrypted Media Locker** is a privacy-focused, decentralized platform that lets you **upload, encrypt, and securely share** any kind of file — audio, video, documents, and more.
+**Aurx** is a privacy-focused, decentralized platform that lets you **upload, encrypt, and securely share** any kind of file — audio, video, documents, and more.
 
 Unlike traditional cloud storage, your files are encrypted **locally** and stored **decentrally** on networks like **IPFS**, while metadata and access control are managed on **Solana**.
 

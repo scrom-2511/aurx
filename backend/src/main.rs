@@ -1,4 +1,8 @@
-use crate::services::{ipfs_uploader, redis::RedisTaskQueue};
+use crate::services::{
+    ipfs_uploader::{self, IPFSUploader},
+    redis_connection::{self, RedisConnection},
+    redis_task::RedisTaskQueue,
+};
 use actix_web::{
     App, HttpResponse, HttpServer, Responder, get, post,
     web::{self},
@@ -41,28 +45,18 @@ async fn upload_chunk(
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
-    let uploader = ipfs_uploader::IPFSUploader::new("https://rpc.filebase.io/api/v0/add");
+    let uploader = IPFSUploader::new("https://rpc.filebase.io/api/v0/add");
 
-    let client = match redis::Client::open(
-        "redis://default:uL6N1puUYwFOKOWSHiEfWFrgUSNzP6TT@redis-12732.c232.us-east-1-2.ec2.cloud.redislabs.com:12732",
-    ) {
-        Ok(c) => c,
-        Err(e) => {
-            eprintln!("Redis connection failed: {}", e);
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                "Redis init failed",
-            ));
-        }
-    };
+    let redis_conn = RedisConnection::new("redis://default:uL6N1puUYwFOKOWSHiEfWFrgUSNzP6TT@redis-12732.c232.us-east-1-2.ec2.cloud.redislabs.com:12732".to_string())
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
 
-    let conn_for_push = client.get_multiplexed_async_connection().await.unwrap();
+    let connections = redis_conn
+        .get_handler_and_worker_connection()
+        .await
+        .unwrap();
 
-    let conn_for_pop = client.get_multiplexed_async_connection().await.unwrap();
-
-    let redis_queue_for_handlers = RedisTaskQueue::new(conn_for_push.clone(), "task_queue");
-
-    let redis_queue_for_worker = RedisTaskQueue::new(conn_for_pop, "task_queue");
+    let redis_queue = RedisTaskQueue::new(connections, "task_queue");
+    let redis_queue_for_worker = redis_queue.clone();
 
     tokio::spawn(async move {
         loop {
@@ -101,7 +95,7 @@ async fn main() -> std::io::Result<()> {
                     .allow_any_header(),
             )
             .app_data(web::PayloadConfig::new(10 * 1024 * 1024))
-            .app_data(web::Data::new(redis_queue_for_handlers.clone()))
+            .app_data(web::Data::new(redis_queue.clone()))
             .service(upload_chunk)
             .service(greet)
     })

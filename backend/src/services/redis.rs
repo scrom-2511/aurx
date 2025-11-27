@@ -1,35 +1,28 @@
-use redis::{AsyncCommands, RedisResult};
+use redis::{AsyncCommands, RedisError, RedisResult};
 
-use crate::services::ipfs_uploader::IPFSUploader;
-
+#[derive(Clone)]
 pub struct RedisTaskQueue {
-    connection: redis::aio::Connection,
-    queue_name: String,
-    uploader: IPFSUploader
+    connection: redis::aio::MultiplexedConnection,
+    queue_name: String
 }
 
 impl RedisTaskQueue {
-    pub fn new(connection: redis::aio::Connection, queue_name: &str, uploader: IPFSUploader) -> Self {
+    pub fn new(connection: redis::aio::MultiplexedConnection, queue_name: &str) -> Self {
         Self {
-            connection,
+            connection: connection,
             queue_name: queue_name.to_string(),
-            uploader
         }
     }
 
-    pub async fn push_task(&mut self, data: &str) -> RedisResult<()> {
-        self.connection.lpush(&self.queue_name, data).await
+    pub async fn push_task(&self, data: &str) -> RedisResult<()> {
+        let mut conn = self.connection.clone();
+        conn.lpush(&self.queue_name, data).await
     }
 
-    pub async fn pop_task(&mut self) -> RedisResult<()> {
-        let result:Option<(String, String)> = self.connection.brpop(&self.queue_name, 0.0).await?;
-
-        if let Some((_, chunk)) = result {
-            match self.uploader.upload_chunk(chunk).await{
-                Ok(_) => print!("Chunks uploaded Successfully!"),
-                Err(_) => print!("There was an error")
-            }
-        }
-        Ok(())
+    pub async fn pop_task(&self) -> Result<(String, String), RedisError> {
+        let mut conn = self.connection.clone();
+        let result = conn.brpop(&self.queue_name, 0.0).await?;
+        println!("{:?}", result);
+        Ok(result)
     }
 }

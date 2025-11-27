@@ -1,4 +1,7 @@
-use reqwest::Client;
+use reqwest::{
+    Client,
+    multipart::{Form, Part},
+};
 
 #[derive(Clone)]
 pub struct IPFSUploader {
@@ -15,7 +18,14 @@ impl IPFSUploader {
     }
 
     pub async fn upload_chunk(&self, chunk: String) -> Result<String, Box<dyn std::error::Error>> {
-        let response = self.client.post(&self.endpoint).body(chunk).send().await?;
+        let file_part = Part::bytes(chunk.as_bytes().to_vec())
+            .file_name("data.txt")
+            .mime_str("application/octet-stream")?;
+
+        let form = Form::new().part("file", file_part);
+        
+        let response = self.client.post(&self.endpoint).header("Authorization", "Bearer NDhERDFCRDM2QkIzMjU4RDA1MzY6TFA5UnFRSzB5Y3lxUG1tOG13ZHJZN1A2Z2ZaeGhBMnY4aVdwRHRqTDp0ZXN0YnVja2Vy").multipart(form).send().await?;
+
         Ok(response.text().await?)
     }
 }

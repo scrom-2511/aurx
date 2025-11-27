@@ -7,6 +7,7 @@ use actix_web::{
     App, HttpResponse, HttpServer, Responder, get, post,
     web::{self},
 };
+use redis::RedisError;
 use serde::Deserialize;
 use socket2::{Domain, Socket, Type};
 use std::net::SocketAddr;
@@ -19,11 +20,6 @@ struct ChunkData {
 }
 
 type RedisQueue = RedisTaskQueue;
-
-#[get("/greet")]
-async fn greet() -> impl Responder {
-    HttpResponse::Ok().json("hello sir")
-}
 
 #[post("/upload_chunk")]
 async fn upload_chunk(
@@ -43,12 +39,8 @@ async fn upload_chunk(
     result
 }
 
-#[actix_web::main]
-async fn main() -> std::io::Result<()> {
-    let uploader = IPFSUploader::new("https://rpc.filebase.io/api/v0/add");
-
-    let redis_conn = RedisConnection::new("redis://default:uL6N1puUYwFOKOWSHiEfWFrgUSNzP6TT@redis-12732.c232.us-east-1-2.ec2.cloud.redislabs.com:12732".to_string())
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
+async fn redis_initialize() -> Result<RedisTaskQueue, RedisError> {
+    let redis_conn = RedisConnection::new("redis://default:uL6N1puUYwFOKOWSHiEfWFrgUSNzP6TT@redis-12732.c232.us-east-1-2.ec2.cloud.redislabs.com:12732".to_string())?;
 
     let connections = redis_conn
         .get_handler_and_worker_connection()
@@ -56,6 +48,14 @@ async fn main() -> std::io::Result<()> {
         .unwrap();
 
     let redis_queue = RedisTaskQueue::new(connections, "task_queue");
+    Ok(redis_queue)
+}
+
+#[actix_web::main]
+async fn main() -> std::io::Result<()> {
+    let uploader = IPFSUploader::new("https://rpc.filebase.io/api/v0/add");
+
+    let redis_queue = redis_initialize().await.map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
     let redis_queue_for_worker = redis_queue.clone();
 
     tokio::spawn(async move {
@@ -97,7 +97,6 @@ async fn main() -> std::io::Result<()> {
             .app_data(web::PayloadConfig::new(10 * 1024 * 1024))
             .app_data(web::Data::new(redis_queue.clone()))
             .service(upload_chunk)
-            .service(greet)
     })
     .listen(listener)?
     .run()

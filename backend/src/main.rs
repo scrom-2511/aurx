@@ -1,5 +1,5 @@
 use crate::services::{
-    ipfs_uploader::IPFSUploader, redis_connection::RedisConnection, redis_task::RedisTaskQueue,
+    ipfs_uploader::{self, IPFSUploader}, redis_connection::RedisConnection, redis_task::RedisTaskQueue,
 };
 use actix_web::{
     App, Error, HttpRequest, HttpResponse, HttpServer, Responder, post, rt,
@@ -10,9 +10,22 @@ use futures_util::StreamExt;
 use redis::RedisError;
 use serde::Deserialize;
 use socket2::{Domain, Socket, Type};
-use std::net::SocketAddr;
+use std::{
+    fs::{self, File, OpenOptions},
+    io::Write,
+    net::SocketAddr,
+};
 
 mod services;
+
+#[macro_export]
+macro_rules! handle_err {
+    ($expr:expr) => {{
+        if let Err(e) = $expr {
+            eprintln!("{}", e);
+        }
+    }};
+}
 
 #[derive(Deserialize)]
 struct ChunkData {
@@ -21,6 +34,13 @@ struct ChunkData {
 
 type RedisQueue = RedisTaskQueue;
 
+#[derive(Deserialize)]
+struct WebsocketVal {
+    hash: String,
+    latest_chunk: i32,
+    total_chunks: i32,
+    file_id: String,
+}
 #[post("/upload_chunk")]
 async fn upload_chunk(
     data: web::Json<ChunkData>,
@@ -51,20 +71,31 @@ async fn redis_initialize() -> Result<RedisTaskQueue, RedisError> {
     Ok(redis_queue)
 }
 
-async fn ws_handler(req: HttpRequest, body: web::Payload) -> Result<HttpResponse, Error> {
-    // Convert HTTP → WebSocket
+async fn ws_handler(req: HttpRequest, body: web::Payload, ipfs_uploader: web::Data<IPFSUploader>) -> Result<HttpResponse, Error> {
     let (response, mut session, mut stream) = actix_ws::handle(&req, body)?;
-    println!("{:?}", response);
-    // Spawn a background task to process messages
+
     rt::spawn(async move {
         while let Some(Ok(msg)) = stream.next().await {
             match msg {
-                Message::Text(text) => {
-                    println!("Received: {}", text);
-                    if session.text(format!("echo: {}", text)).await.is_err() {
-                        break;
+                Message::Text(text) => match serde_json::from_str::<WebsocketVal>(&text) {
+                    Ok(val) => {
+                        match OpenOptions::new()
+                            .append(true)
+                            .create(true)
+                            .open(format!("./users/files/{}.txt", val.file_id))
+                        {
+                            Ok(mut file) => {
+                                handle_err!(write!(file, "{},", val.hash));
+                                if val.latest_chunk == val.total_chunks {
+                                    handle_err!(ipfs_uploader.upload(&val.file_id, &format!("./users/files/{}.txt", val.file_id)).await);
+                                    handle_err!(fs::remove_file(format!("./users/files/{}.txt", val.file_id)));
+                                }
+                            }
+                            Err(e) => eprint!("{}", e),
+                        }
                     }
-                }
+                    Err(err) => eprintln!("Invalid JSON: {}, raw text: {}", err, text),
+                },
                 Message::Ping(bytes) => {
                     let _ = session.pong(&bytes).await;
                 }
@@ -78,7 +109,6 @@ async fn ws_handler(req: HttpRequest, body: web::Payload) -> Result<HttpResponse
         }
     });
 
-    // Return WebSocket upgrade response
     Ok(response)
 }
 
@@ -91,23 +121,23 @@ async fn main() -> std::io::Result<()> {
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
     let redis_queue_for_worker = redis_queue.clone();
 
-    tokio::spawn(async move {
-        loop {
-            match redis_queue_for_worker.pop_task().await {
-                Ok((_, val)) => match uploader.upload_chunk(val).await {
-                    Ok(res) => {
-                        println!("{}", res);
-                    }
-                    Err(e) => {
-                        println!("Failed to upload chunk{}", e);
-                    }
-                },
-                Err(e) => {
-                    eprintln!("Failed to pop task: {}", e);
-                }
-            }
-        }
-    });
+    // tokio::spawn(async move {
+    //     loop {
+    //         match redis_queue_for_worker.pop_task().await {
+    //             Ok((_, val)) => match uploader.upload_chunk(val).await {
+    //                 Ok(res) => {
+    //                     println!("{}", res);
+    //                 }
+    //                 Err(e) => {
+    //                     println!("Failed to upload chunk{}", e);
+    //                 }
+    //             },
+    //             Err(e) => {
+    //                 eprintln!("Failed to pop task: {}", e);
+    //             }
+    //         }
+    //     }
+    // });
 
     let address: SocketAddr = "127.0.0.1:4000".parse().unwrap();
 

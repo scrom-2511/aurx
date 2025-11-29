@@ -1,12 +1,12 @@
 use crate::services::{
-    ipfs_uploader::{self, IPFSUploader},
-    redis_connection::{self, RedisConnection},
-    redis_task::RedisTaskQueue,
+    ipfs_uploader::IPFSUploader, redis_connection::RedisConnection, redis_task::RedisTaskQueue,
 };
 use actix_web::{
-    App, HttpResponse, HttpServer, Responder, get, post,
+    App, Error, HttpRequest, HttpResponse, HttpServer, Responder, post, rt,
     web::{self},
 };
+use actix_ws::Message;
+use futures_util::StreamExt;
 use redis::RedisError;
 use serde::Deserialize;
 use socket2::{Domain, Socket, Type};
@@ -51,11 +51,44 @@ async fn redis_initialize() -> Result<RedisTaskQueue, RedisError> {
     Ok(redis_queue)
 }
 
+async fn ws_handler(req: HttpRequest, body: web::Payload) -> Result<HttpResponse, Error> {
+    // Convert HTTP → WebSocket
+    let (response, mut session, mut stream) = actix_ws::handle(&req, body)?;
+    println!("{:?}", response);
+    // Spawn a background task to process messages
+    rt::spawn(async move {
+        while let Some(Ok(msg)) = stream.next().await {
+            match msg {
+                Message::Text(text) => {
+                    println!("Received: {}", text);
+                    if session.text(format!("echo: {}", text)).await.is_err() {
+                        break;
+                    }
+                }
+                Message::Ping(bytes) => {
+                    let _ = session.pong(&bytes).await;
+                }
+                Message::Close(reason) => {
+                    println!("Client disconnected: {:?}", reason);
+                    let _ = session.close(reason).await;
+                    break;
+                }
+                _ => {}
+            }
+        }
+    });
+
+    // Return WebSocket upgrade response
+    Ok(response)
+}
+
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
     let uploader = IPFSUploader::new("https://rpc.filebase.io/api/v0/add");
 
-    let redis_queue = redis_initialize().await.map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
+    let redis_queue = redis_initialize()
+        .await
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
     let redis_queue_for_worker = redis_queue.clone();
 
     tokio::spawn(async move {
@@ -97,6 +130,7 @@ async fn main() -> std::io::Result<()> {
             .app_data(web::PayloadConfig::new(10 * 1024 * 1024))
             .app_data(web::Data::new(redis_queue.clone()))
             .service(upload_chunk)
+            .route("/ws", web::get().to(ws_handler))
     })
     .listen(listener)?
     .run()

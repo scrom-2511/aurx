@@ -17,17 +17,16 @@ pub enum FileType {
     Document,
 }
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
 #[sea_orm(table_name = "file")]
 pub struct Model {
     #[sea_orm(primary_key)]
-    pub id: String,
+    pub file_id: String,
     pub name: String,
     pub file_size: u32,
     pub file_type: FileType,
     pub file_extension: String,
     pub latest_chunk: i32,
-    pub file_id: String,
     pub uploaded_at: OffsetDateTime,
     pub user_id: i32
 }

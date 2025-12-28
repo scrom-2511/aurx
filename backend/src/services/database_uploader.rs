@@ -19,15 +19,15 @@ impl DatabaseUploader {
 
     pub async fn file_upload(
         &self,
-        file: FileDetails,
+        file: &FileDetails,
         user_id: i32,
     ) -> Result<HttpResponse, DbErr> {
         let new_file = file::ActiveModel {
             id: Set(file.file_id.clone()),
-            name: Set(file.name),
+            name: Set(file.name.clone()),
             file_size: Set(file.file_size),
-            file_type: Set(file.file_type),
-            file_extension: Set(file.file_extension),
+            file_type: Set(file.file_type.clone()),
+            file_extension: Set(file.file_extension.clone()),
             latest_chunk: Set(file.latest_chunk),
             uploaded_at: Set(file.uploaded_at),
             file_id: Set(file.file_id.clone()),

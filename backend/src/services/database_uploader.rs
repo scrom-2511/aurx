@@ -1,8 +1,10 @@
 use actix_web::HttpResponse;
 use sea_orm::{ActiveModelTrait, ActiveValue::Set, Database, DatabaseConnection, DbErr};
+use serde_json::json;
 
 use crate::{database::schema::file, services::file_details::FileDetails};
 
+#[derive(Clone)]
 pub struct DatabaseUploader {
     conn: DatabaseConnection,
 }
@@ -33,7 +35,7 @@ impl DatabaseUploader {
         };
 
         match new_file.insert(&self.conn).await {
-            Ok(_) => Ok(HttpResponse::Ok().json("file inserted successfully")),
+            Ok(_) => Ok(HttpResponse::Ok().json(json!({"success": true}))),
             Err(e) => Err(e),
         }
     }

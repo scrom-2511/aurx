@@ -29,11 +29,12 @@ pub struct Model {
     pub latest_chunk: i32,
     pub file_id: String,
     pub uploaded_at: OffsetDateTime,
+    pub user_id: i32
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
-    #[sea_orm(belongs_to = "user::Entity", from = "Column::Id", to = "user::Column::UserId")]
+    #[sea_orm(belongs_to = "user::Entity", from = "Column::UserId", to = "user::Column::UserId")]
     User,
 }
 

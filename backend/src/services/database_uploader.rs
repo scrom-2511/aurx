@@ -2,7 +2,8 @@ use actix_web::HttpResponse;
 use sea_orm::{ActiveModelTrait, ActiveValue::Set, Database, DatabaseConnection, DbErr};
 use serde_json::json;
 
-use crate::{database::schema::file, services::file_details::FileDetails};
+use crate::database::schema::file;
+use crate::database::schema::file::Model as FileMetadata;
 
 #[derive(Clone)]
 pub struct DatabaseUploader {
@@ -19,11 +20,10 @@ impl DatabaseUploader {
 
     pub async fn file_upload(
         &self,
-        file: &FileDetails,
+        file: &FileMetadata,
         user_id: i32,
     ) -> Result<HttpResponse, DbErr> {
         let new_file = file::ActiveModel {
-            id: Set(file.file_id.clone()),
             name: Set(file.name.clone()),
             file_size: Set(file.file_size),
             file_type: Set(file.file_type.clone()),

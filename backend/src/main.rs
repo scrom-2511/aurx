@@ -2,61 +2,21 @@ use crate::{
     database::schema::file::Model as FileMetadata,
     services::{
         database_uploader::DatabaseUploader,
-        file_chunk_manager::{self, FileChunkHashes},
+        file_chunk_manager::FileChunkHashes,
         ipfs_uploader::IPFSUploader,
     },
 };
 use actix_web::{
-    App, Error, HttpRequest, HttpResponse, HttpServer, Responder, post, rt,
+    App, HttpResponse, HttpServer, Responder, post,
     web::{self},
 };
-use actix_ws::Message;
-use futures_util::StreamExt;
-use serde::{Deserialize, Serialize};
 use socket2::{Domain, Socket, Type};
 use std::{net::SocketAddr, sync::Arc};
 use tokio::sync::Mutex;
 
 mod database;
 mod services;
-
-#[derive(Serialize, Deserialize)]
-struct WebsocketVal {
-    hash: String,
-    latest_chunk: u32,
-    total_chunks: u16,
-    file_id: String,
-}
-
-fn ws_handler(
-    req: HttpRequest,
-    body: web::Payload,
-    file_chunks_manager: web::Data<Arc<Mutex<FileChunkHashes>>>,
-) -> Result<HttpResponse, Error> {
-    let (res, _session, mut stream) = actix_ws::handle(&req, body)?;
-
-    let file_chunks_manager_cloned = file_chunks_manager.clone();
-
-    rt::spawn(async move {
-        while let Some(msg) = stream.next().await {
-            match msg {
-                Ok(Message::Text(text)) => {
-                    if let Ok(data) = serde_json::from_str::<WebsocketVal>(&text) {
-                        file_chunks_manager_cloned.lock().await.add_chunk_hash(data.hash, data.file_id);
-                    }
-                }
-                Ok(Message::Close(_)) => break,
-                Ok(_) => {}
-                Err(e) => {
-                    eprintln!("WebSocket error: {}", e);
-                    break;
-                }
-            }
-        }
-    });
-
-    Ok(res)
-}
+mod ws_handler;
 
 #[post("/upload_file")]
 async fn upload_file(

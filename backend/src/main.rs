@@ -11,7 +11,7 @@ use actix_web::{
     web::{self},
 };
 use socket2::{Domain, Socket, Type};
-use std::{net::SocketAddr, sync::Arc};
+use std::{env, net::SocketAddr, sync::Arc};
 use tokio::sync::Mutex;
 
 mod database;
@@ -29,8 +29,10 @@ async fn upload_file(
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
+    dotenvy::dotenv().ok();
     let ipfs_uploader = IPFSUploader::new("https://rpc.filebase.io/api/v0/add");
-    let database_uploader = DatabaseUploader::new("postgresql://neondb_owner:npg_wnGc5zvbaCH6@ep-empty-credit-a4il0l00-pooler.us-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require").await.unwrap();
+    let database_url = env::var("DATABASE_URL").unwrap();
+    let database_uploader = DatabaseUploader::new(&database_url).await.unwrap();
     let file_chunks_manager = Arc::new(Mutex::new(FileChunkHashes::new()));
     let address: SocketAddr = "127.0.0.1:4000".parse().unwrap();
 

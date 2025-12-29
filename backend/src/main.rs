@@ -54,6 +54,7 @@ async fn main() -> std::io::Result<()> {
             .app_data(web::Data::new(ipfs_uploader.clone()))
             .app_data(web::Data::new(file_chunks_manager.clone()))
             .app_data(web::Data::new(database_uploader.clone()))
+            .route("/ws", web::get().to(ws_handler::ws_handler))
     })
     .listen(listener)?
     .run()
